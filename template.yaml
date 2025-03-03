@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Cooksnap - 食材からレシピを提案するLINE Bot
+
+Globals:
+  Function:
+    Timeout: 29
+    Runtime: python3.9
+    MemorySize: 256
+
+Resources:
+  CooksnapFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          LINE_CHANNEL_SECRET: '{{resolve:ssm:/cooksnap/LINE_CHANNEL_SECRET:1}}'
+          LINE_CHANNEL_ACCESS_TOKEN: '{{resolve:ssm:/cooksnap/LINE_CHANNEL_ACCESS_TOKEN:1}}'
+          CLAUDE_API_KEY: '{{resolve:ssm:/cooksnap/CLAUDE_API_KEY:1}}'
+          S3_BUCKET_NAME: !Ref ImagesBucket
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref ImagesBucket
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /webhook
+            Method: post
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: cooksnap-users
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: referral_code
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: referral_code-index
+          KeySchema:
+            - AttributeName: referral_code
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  ImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub cooksnap
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+            AllowedOrigins:
+              - '*'
+            ExposedHeaders:
+              - ETag
+            MaxAge: 3000
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldImages
+            Status: Enabled
+            ExpirationInDays: 7
+
+Outputs:
+  WebhookApi:
+    Description: "API Gateway endpoint URL for Prod stage for LINE webhook"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/webhook"
+
+  CooksnapFunction:
+    Description: "Cooksnap Lambda Function ARN"
+    Value: !GetAtt CooksnapFunction.Arn
