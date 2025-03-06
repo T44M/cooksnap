@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import logging
+import boto3
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import (
@@ -16,9 +17,30 @@ import recipe
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# 環境変数から設定を読み込み
-LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
+# SSMからパラメータを取得する関数
+def get_ssm_parameter(parameter_name):
+    """SSMパラメータストアから値を取得する"""
+    if not parameter_name:
+        return None
+        
+    ssm = boto3.client('ssm')
+    try:
+        response = ssm.get_parameter(
+            Name=parameter_name,
+            WithDecryption=True
+        )
+        return response['Parameter']['Value']
+    except Exception as e:
+        logger.error(f"SSMパラメータの取得エラー {parameter_name}: {e}")
+        return None
+
+# 環境変数から設定キーを読み込み
+SSM_LINE_CHANNEL_SECRET = os.environ.get('SSM_LINE_CHANNEL_SECRET', '/cooksnap/LINE_CHANNEL_SECRET')
+SSM_LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('SSM_LINE_CHANNEL_ACCESS_TOKEN', '/cooksnap/LINE_CHANNEL_ACCESS_TOKEN')
+
+# 実際の値を取得
+LINE_CHANNEL_SECRET = get_ssm_parameter(SSM_LINE_CHANNEL_SECRET) or os.environ.get('LINE_CHANNEL_SECRET')
+LINE_CHANNEL_ACCESS_TOKEN = get_ssm_parameter(SSM_LINE_CHANNEL_ACCESS_TOKEN) or os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME')
 
 # LINE Bot SDKのセットアップ
